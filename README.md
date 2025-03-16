@@ -72,3 +72,48 @@ COMMIT
 > Изучите возникшие блокировки в представлении pg_locks и убедитесь, что все они понятны.
 > Пришлите список блокировок и объясните, что значит каждая.
 
+Сессия #01
+   ```sql
+postgres=# BEGIN;
+BEGIN
+postgres=*# SELECT txid_current(), pg_backend_pid();
+ txid_current | pg_backend_pid
+--------------+----------------
+          783 |          10915
+(1 строка)
+
+postgres=*#
+postgres=*# UPDATE accounts SET amount = amount + 100.00 WHERE acc_no = 1;
+UPDATE 1
+postgres=*# SELECT * FROM locks_v WHERE pid = 10915;
+  pid  |   locktype    |  lockid  |       mode       | granted
+-------+---------------+----------+------------------+---------
+ 10915 | relation      | accounts | RowExclusiveLock | t
+ 10915 | transactionid | 783      | ExclusiveLock    | t
+   ```
+Транзакция #1 (10915) Получена экслюзивная блокировка собственного номера транзакции и блокировка таблицы в режиме RowExclusiveLock.
+
+
+Сессия #02
+   ```sql
+postgres=# BEGIN;
+BEGIN
+postgres=*# SELECT txid_current(), pg_backend_pid();
+ txid_current | pg_backend_pid
+--------------+----------------
+          784 |          10967
+postgres=*# UPDATE accounts SET amount = amount + 100.00 WHERE acc_no = 1;
+/* транзакци повисла */
+postgres=*# SELECT * FROM locks_v WHERE pid = 10967;
+  pid  |   locktype    |   lockid   |       mode       | granted
+-------+---------------+------------+------------------+---------
+ 10967 | relation      | accounts   | RowExclusiveLock | t
+ 10967 | transactionid | 784        | ExclusiveLock    | t
+ 10967 | transactionid | 783        | ShareLock        | f
+ 10967 | tuple         | accounts:1 | ExclusiveLock    | t
+  ```
+Транзакция #2 (10967) Получена экслюзивная блокировка собственного номера транзакции, блокировка таблицы в режиме RowExclusiveLock, блокировка версии строки.
+Блокировка номера транзакции уже обновляющей данную строку (acc_no = 1) не предоставлена - поэтому транзакция повисла.
+
+
+
