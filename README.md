@@ -115,5 +115,59 @@ postgres=*# SELECT * FROM locks_v WHERE pid = 10967;
 Транзакция #2 (10967) Получена экслюзивная блокировка собственного номера транзакции, блокировка таблицы в режиме RowExclusiveLock, блокировка версии строки.
 Блокировка номера транзакции уже обновляющей данную строку (acc_no = 1) не предоставлена - поэтому транзакция повисла.
 
+Сессия #03
+   ```sql
+postgres=# BEGIN;
+BEGIN
+postgres=*# SELECT txid_current(), pg_backend_pid();
+ txid_current | pg_backend_pid
+--------------+----------------
+          785 |          11178
+postgres=*# UPDATE accounts SET amount = amount + 100.00 WHERE acc_no = 1;
+/* транзакци повисла */
+postgres=*# SELECT * FROM locks_v WHERE pid = 11178;
+  pid  |   locktype    |   lockid   |       mode       | granted
+-------+---------------+------------+------------------+---------
+ 11178 | relation      | accounts   | RowExclusiveLock | t
+ 11178 | transactionid | 785        | ExclusiveLock    | t
+ 11178 | tuple         | accounts:1 | ExclusiveLock    | f
+  ```
+Транзакция #3 (11178) Получена экслюзивная блокировка собственного номера транзакции, блокировка таблицы в режиме RowExclusiveLock.
+Блокировка блокировка версии строки не предоставлена (заблокирована в транзакции #3) - поэтому транзакция повисла.
 
 
+Сессия #01
+   ```sql
+postgres=*# commit;
+COMMIT
+postgres=# SELECT * FROM locks_v WHERE pid = 10915;
+ pid | locktype | lockid | mode | granted
+-----+----------+--------+------+---------
+(0 строк)
+  ```
+
+Транзакция #1 (10915). Выполнена модификация строки. Все заблокированные ресурсы освобождены.
+Сессия #01
+   ```sql
+postgres=# SELECT * FROM locks_v WHERE pid = 10967;
+  pid  |   locktype    |  lockid  |       mode       | granted
+-------+---------------+----------+------------------+---------
+ 10967 | relation      | accounts | RowExclusiveLock | t
+ 10967 | transactionid | 784      | ExclusiveLock    | t
+ ```
+
+Транзакция #2 (10967). Уровень изоляции ReadCommited - Сейчас транзакция просто узменяет данные (изменения транзакции #1 зафиксированы). 
+Получена экслюзивная блокировка собственного номера транзакции, блокировка таблицы в режиме RowExclusiveLock.
+Сессия #01
+   ```sql
+postgres=# SELECT * FROM locks_v WHERE pid = 11178;
+  pid  |   locktype    |  lockid  |       mode       | granted
+-------+---------------+----------+------------------+---------
+ 11178 | relation      | accounts | RowExclusiveLock | t
+ 11178 | transactionid | 784      | ShareLock        | f
+ 11178 | transactionid | 785      | ExclusiveLock    | t
+ ```
+
+Транзакция #3 (11178) ожидает завершения транзакции #2, не пытается получить блокировку версии строки. Такова логика работы Postgres.
+
+COMMIT в сессии #02 и сессии #03 фиксирует изменение данных. Освобождает ресурсы. 
