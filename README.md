@@ -26,7 +26,7 @@ postgres=# SELECT pg_reload_conf();
  pg_reload_conf
 ----------------
  t
-postgres=# SHOW log_lock_waits;
+postgres=# SHOW log_lock_waits; 
  log_lock_waits
 ----------------
  on
@@ -35,16 +35,36 @@ postgres=# SHOW deadlock_timeout;
 ------------------
  200ms
    ```
+> Воспроизведите ситуацию, при которой в журнале появятся такие сообщения.
+   ```sql
+postgres=# begin; /* seesion #01 */
+BEGIN
+postgres=*# select * From accounts Where acc_no = 1 for update;
+ acc_no | amount
+--------+---------
+      1 | 1100.00
+postgres=# Select pg_sleep(1);
+ pg_sleep
+...
+postgres=*# commit;
+COMMIT
 
-**Установка PostgreSQL 15 AltLinux**    
+postgres=# begin; /* seesion #02 */
+BEGIN
+postgres=*# update accounts set amount = amount + 100 Where acc_no = 1;
+UPDATE 1
+postgres=*# commit;
+COMMIT
+   ```
    ```sh
-apt-get install postgresql15-server postgresql15-server-devel    
-/etc/init.d/postgresql initdb    
-systemctl enable postgresql.service    
-systemctl start postgresql.service
+[root@altLinux01 ~]# cat /var/lib/pgsql/data/log/postgresql-2025-03-16_181752.log
+2025-03-16 18:42:36.091 MSK [10456] СООБЩЕНИЕ:  процесс 10456 продолжает ожидать в режиме ShareLock блокировку "транзакция 755" в течение 200.701 мс
+2025-03-16 18:42:36.091 MSK [10456] ПОДРОБНОСТИ:  Process holding the lock: 10332. Wait queue: 10456.
+2025-03-16 18:42:36.091 MSK [10456] КОНТЕКСТ:  при изменении кортежа (0,5) в отношении "accounts"
+2025-03-16 18:42:36.091 MSK [10456] ОПЕРАТОР:  update accounts set amount = amount + 100 Where acc_no = 1;
+2025-03-16 18:42:45.327 MSK [10456] СООБЩЕНИЕ:  процесс 10456 получил в режиме ShareLock блокировку "транзакция 755" через 9435.971 мс
+2025-03-16 18:42:45.327 MSK [10456] КОНТЕКСТ:  при изменении кортежа (0,5) в отношении "accounts"
+2025-03-16 18:42:45.327 MSK [10456] ОПЕРАТОР:  update accounts set amount = amount + 100 Where acc_no = 1;
    ```
 
-**Установка PGBench**
-   ```sh
-apt-get install postgresql15-contrib    
-   ```
+
